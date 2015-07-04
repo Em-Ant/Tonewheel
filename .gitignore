@@ -30,3 +30,6 @@
 # Backups
 
 *.*~
+
+# Custom executable postfix on Linux
+*_exe

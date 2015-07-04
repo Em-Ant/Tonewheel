@@ -10,9 +10,9 @@ CXX		= g++
 CC		= gcc
 PG =
 
-OPTIM		=  -Os -Wall -Wunused -Wno-format-y2k  -fno-exceptions -fno-strict-aliasing -ffunction-sections -fdata-sections
-CFLAGS		= $(OPTIM) -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_THREAD_SAFE -D_REENTRANT   
-CXXFLAGS	= $(OPTIM) -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_THREAD_SAFE -D_REENTRANT 
+#OPTIM		=  -Os -Wall -Wunused -Wno-format-y2k  -fno-exceptions -fno-strict-aliasing -ffunction-sections -fdata-sections
+#CFLAGS		= $(OPTIM) -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_THREAD_SAFE -D_REENTRANT   
+#CXXFLAGS	= $(OPTIM) -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_THREAD_SAFE -D_REENTRANT 
 
 LDFLAGS		= $(OPTIM)  
 LDLIBS		= -lXfixes -lXext -lpthread -ldl -lm  -lX11 
@@ -23,18 +23,18 @@ LINKFLTKFORMS	= ./lib/libfltk_forms.a ./lib/libfltk.a
 LINKFLTKIMG	= ./lib/libfltk_images.a ./lib/libfltk.a 
 
 OBJS=	fltk_test.o
-		
-EXEC= test
 
+EXEC= test
+EXE_POSTFIX = _exe				# I add this on Linux, to help .gitignore skip executables
 
 all:	$(OBJS)
-	$(CXX) $(CXXFLAGS) -o $(EXEC) $(OBJS) $(LINKFLTK) $(LDLIBS) $(GLDLIBS)
+	$(CXX) $(CXXFLAGS) -o $(EXEC)$(EXE_POSTFIX) $(OBJS) $(LINKFLTK) $(LDLIBS) $(GLDLIBS)
 	
 clean:
-	-@rm -f *.o $(EXEC) *~ 
+	-@rm -f *.o $(EXEC)$(EXE_POSTFIX) *~ 
 
 exec: all
-	./$(EXEC)
+	./$(EXEC)$(EXE_POSTFIX)
 
 #DEPS gxx -MM 
 
