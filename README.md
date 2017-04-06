@@ -1,6 +1,6 @@
 # Tonewheel
 
-###A Tonewheel Organ Emulation
+### A Tonewheel Organ Emulation
 
 It's an almost accurate emulation of a Hammond Tonewheel organ, featuring 96+36 free-running wave-table sine oscillator, with original non equal-tempered frequencies. 
 It'also has a tremolo unit, a tonewheel chorus, the classic percussion envelope, and an algorithmic [Schroeder Reverb](https://ccrma.stanford.edu/~jos/pasp/). I plan to add a saturation/distortion, and maybe a Leslie emulator. 
