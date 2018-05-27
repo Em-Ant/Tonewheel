@@ -456,24 +456,39 @@ double streamTime, RtAudioStreamStatus status, void *userData )
     return 0;
 }
 
+inline void set_drawbars(unsigned char encoded_command, double* drawbars) {
+  // bar*10 + value
+  if (encoded_command >= 0 && encoded_command < 89) {
+    int bar = encoded_command / 10;
+    double value = (encoded_command % 10) / 10.0;
+    drawbars[bar] = value;
+  }
+}
 inline void midicbk( double deltatime, std::vector< unsigned char > *message, void *userData )
 {
-    short key = message->at(1) - 36;
-    if(key >=0 && key < 61)
-    {
-        MUTEX_LOCK(mutex);
-        if (message->at(0) == 0x90 && message->at(2) > 0)
-        {
-            normal_envelope->key_pressed(key);
-            perc->key_pressed(key);
-        }
+    if (message->at(0) == 0xB0 && message->at(1) == 0x46) {
+      // control change && #CC70
+      MUTEX_LOCK(mutex);
+      set_drawbars(message->at(2), drawbars);
+      MUTEX_UNLOCK(mutex);
+    } else {
+      short key = message->at(1) - 36;
+      if(key >=0 && key < 61)
+      {
+          MUTEX_LOCK(mutex);
+          if (message->at(0) == 0x90 && message->at(2) > 0)
+          {
+              normal_envelope->key_pressed(key);
+              perc->key_pressed(key);
+          }
 
-        else if((message->at(0) == 0x90 && message->at(2) == 0) || message->at(0) == 0x80)
-        {
-            normal_envelope->key_released(key);
-            perc->key_released(key);
-        }
-        MUTEX_UNLOCK(mutex);
+          else if((message->at(0) == 0x90 && message->at(2) == 0) || message->at(0) == 0x80)
+          {
+              normal_envelope->key_released(key);
+              perc->key_released(key);
+          }
+          MUTEX_UNLOCK(mutex);
+      }
     }
 }
 
