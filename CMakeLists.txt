@@ -7,8 +7,8 @@ include_directories(src lib)
 set(SOURCES 
     src/adsr.cpp
     src/perc_envelope.cpp
-    src/sc_reverb.c
     src/tonewheel.cpp
+    src/reverb/reverb.cpp
 )
 
 set(CMAKE_CXX_STANDARD 11)
@@ -23,7 +23,7 @@ add_executable(tonewheel ${SOURCES})
 target_link_libraries(tonewheel rtaudio rtmidi pthread asound)
 
 add_custom_target(run
-    COMMAND tonewheel
+    COMMAND tonewheel -M2 -A2
     DEPENDS tonewheel
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 )
