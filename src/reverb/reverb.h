@@ -15,9 +15,8 @@ class comb_filter final : public filter
   double gain;
   double damping;
   size_t buffer_size;
-  circular_buffer<double> y_buffer;
-  circular_buffer<double> x_buffer;
-  double lp_filter_memo = 0;
+  circular_buffer<double> buffer;
+  double lp_filter_1 = 0;
 
 public:
   comb_filter(double gain, double damping, size_t buffer_size);
@@ -30,8 +29,7 @@ class all_pass_filter final : public filter
 {
   double gain;
   size_t buffer_size;
-  circular_buffer<double> y_buffer;
-  circular_buffer<double> x_buffer;
+  circular_buffer<double> buffer;
 
 public:
   all_pass_filter(double gain, size_t buffer_size);

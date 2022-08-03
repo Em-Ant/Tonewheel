@@ -4,9 +4,8 @@ comb_filter::comb_filter(double gain, double damping, size_t buffer_size)
     : gain(gain),
       damping(damping),
       buffer_size(buffer_size),
-      y_buffer(circular_buffer<double>(buffer_size)),
-      x_buffer(circular_buffer<double>(buffer_size)),
-      lp_filter_memo(0){};
+      buffer(circular_buffer<double>(buffer_size)),
+      lp_filter_1(0){};
 
 /**
  * @brief
@@ -15,6 +14,8 @@ comb_filter::comb_filter(double gain, double damping, size_t buffer_size)
  *
  * y[n] = g * yf[n] + x[n-N]
  * yf[n] = yf[n-1]*d +(1-d)*xf[n] -> xf[n] = y[n-N]
+ *
+ * (implemented in direct form II)
  *
  * see https://ccrma.stanford.edu/~jos/pasp/
  *
@@ -28,30 +29,25 @@ void comb_filter::process(double const *input,
 {
   for (size_t i = 0; i < n_samples; i++)
   {
-
-    double y_N = y_buffer.read_at(0);
-    lp_filter_memo = (1 - damping) * y_N +
-                     damping * lp_filter_memo;
-
-    double output_sample = lp_filter_memo * gain +
-                           x_buffer.write(input[i]);
-
-    y_buffer.write(output_sample);
-
-    output[i] += output_sample;
+    double t_N = buffer.read_at_N();
+    lp_filter_1 = damping * lp_filter_1 + (1 - damping) * t_N;
+    double t = lp_filter_1 * gain + input[i];
+    output[i] += t_N + t;
+    buffer.write(t);
   }
 };
 
 all_pass_filter::all_pass_filter(double gain, size_t buffer_size)
     : gain(gain),
       buffer_size(buffer_size),
-      y_buffer(circular_buffer<double>(buffer_size)),
-      x_buffer(circular_buffer<double>(buffer_size)){};
+      buffer(circular_buffer<double>(buffer_size)){};
 
 /**
  * @brief
  * H_AP(z)   = (-g + z^-N)/(1-g*z^-N)
  * y[n] = g * y[n-N] + x[n-N] - g*x[n]
+ *
+ * (implemented in direct form II)
  *
  * see https://ccrma.stanford.edu/~jos/pasp/
  *
@@ -65,13 +61,10 @@ void all_pass_filter::process(double const *input,
 {
   for (size_t i = 0; i < n_samples; i++)
   {
-
-    double y_N = y_buffer.read_at(0);
-    double y = gain * y_N - gain * input[i] +
-               x_buffer.write(input[i]);
-    y_buffer.write(y);
-
-    output[i] = y;
+    double t_N = buffer.read_at_N();
+    double t = t_N * gain + input[i];
+    output[i] = gain * (t - t_N);
+    buffer.write(t);
   }
 };
 
