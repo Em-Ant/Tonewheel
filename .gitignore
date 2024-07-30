@@ -42,9 +42,11 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+/.cmake
 
 # Custom executable postfix on Linux
 *_exe
 
 # build dir
+/build
 /bin
