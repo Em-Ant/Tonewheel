@@ -9,9 +9,10 @@ set(SOURCES
     src/perc_envelope.cpp
     src/tonewheel.cpp
     src/reverb/reverb.cpp
+    src/leslie/leslie.cpp
 )
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_compile_options(-Wall -O3)

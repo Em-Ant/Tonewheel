@@ -22,6 +22,7 @@
 #include "RtMidi.h"
 // #include "sc_reverb.h"
 #include "./reverb/reverb.h"
+#include "./leslie/leslie.h"
 #include "perc_envelope.h"
 
 #if (defined(_WIN32) || defined(__WIN32__))
@@ -231,6 +232,12 @@ perc_envelope *perc;
 double wet_rev = 0.8, dry_rev = 0.1, rev_time = 0.84, rev_damping = 0.2;
 std::unique_ptr<reverb> _rev;
 
+/// Leslie Simulator
+int leslie_initial_speed = 1; // 1=slow, 2=fast (default: slow)
+int current_leslie_speed = 1; // 1=slow, 2=fast (current state)
+bool leslie_enabled = true;
+std::unique_ptr<leslie_simulator> _leslie;
+
 /// FUNCTIONS
 
 int hammond_initialize()
@@ -289,6 +296,21 @@ int hammond_initialize()
     comp_trans = std::ceil((comp_trans_ms * sample_rate) / (buf_size * 1000.0));
 
     _rev = std::unique_ptr<reverb>(new reverb(rev_time, rev_damping, dry_rev, wet_rev, buf_size));
+
+    // Initialize Leslie simulator
+    _leslie = std::unique_ptr<leslie_simulator>(new leslie_simulator(sample_rate));
+    _leslie->set_leslie_122_preset();
+
+    // Set initial Leslie speed
+    current_leslie_speed = leslie_initial_speed;
+    if (current_leslie_speed == 1)
+    {
+        _leslie->set_fixed_speeds(140, 90); // slow
+    }
+    else // current_leslie_speed == 2
+    {
+        _leslie->set_fixed_speeds(480, 320); // fast
+    }
 
     normal_envelope = new adsr(8.0, 1.0, 1.0, 8.0, buf_size * 1000.0 / sample_rate, NO_PERCUSSION);
     if (fast == 1)
@@ -422,11 +444,29 @@ inline int wave(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrame
     double *bufferR = bufferL + nBufferFrames;
     if (status)
         std::cout << "Stream underflow detected!" << std::endl;
-    set_level_steps();
-    for (unsigned int i = 0; i < nBufferFrames; i++)
-        bufferL[i] = get_sample();
 
-    // Reverb
+    // Get mono samples
+    set_level_steps();
+    std::vector<double> temp_buffer(nBufferFrames);
+    for (unsigned int i = 0; i < nBufferFrames; i++)
+        temp_buffer[i] = get_sample();
+
+    // Process through Leslie simulator
+    if (leslie_enabled)
+    {
+        _leslie->process(temp_buffer.data(), bufferL, bufferR, nBufferFrames);
+    }
+    else
+    {
+        // Bypass Leslie - copy mono to both channels
+        for (unsigned int i = 0; i < nBufferFrames; i++)
+        {
+            bufferL[i] = temp_buffer[i];
+            bufferR[i] = temp_buffer[i];
+        }
+    }
+
+    // Apply reverb after Leslie
     _rev->process(bufferL, bufferL, bufferR);
     return 0;
 }
@@ -448,6 +488,26 @@ inline void midicbk(double deltatime, std::vector<unsigned char> *message, void 
         // control change && #CC70
         MUTEX_LOCK(mutex);
         set_drawbars(message->at(2), drawbars);
+        MUTEX_UNLOCK(mutex);
+    }
+    else if (message->at(0) == 0xB0 && message->at(1) == 0x40)
+    {
+        // CC 64 - Sustain footswitch - Toggle Leslie speed
+        MUTEX_LOCK(mutex);
+        if (message->at(2) > 63) // Footswitch pressed
+        {
+            // Toggle between slow and fast speeds
+            if (current_leslie_speed == 1)
+            {
+                current_leslie_speed = 2;
+                _leslie->set_fixed_speeds(480, 320); // fast
+            }
+            else
+            {
+                current_leslie_speed = 1;
+                _leslie->set_fixed_speeds(140, 90); // slow
+            }
+        }
         MUTEX_UNLOCK(mutex);
     }
     else
@@ -498,27 +558,30 @@ int main(int argc, char **argv)
     int c;
     unsigned int midiport = 0, audiodev = 0;
     struct option opts[] =
-        {{"sample_rate", 1, NULL, 's'},
-         {"buffer_size", 1, NULL, 'b'},
-         {"drawbars", 1, NULL, 'd'},
-         {"xtalk", 1, NULL, 'x'},
-         {"chorus", 1, NULL, 'c'},
-         {"volume", 1, NULL, 'V'},
-         {"tremulant_level", 1, NULL, 't'},
-         {"tremulant_fre double dres = ((double)phase & 0x3FFFFF)/0x400000;quency", 1, NULL, 'f'},
-         {"reverb_time", 1, NULL, 'T'},
-         {"reverb_damping", 1, NULL, 'r'},
-         {"reverb_dry", 1, NULL, 'D'},
-         {"reverb_wet", 1, NULL, 'W'},
-         {"help", 0, NULL, 'h'},
-         {"midi_device", 1, NULL, 'M'},
-         {"audio_device", 1, NULL, 'A'},
-         {"percussion", 1, NULL, 'P'},
-         {"perc_fast", 0, NULL, 'F'},
-         {"perc_soft", 0, NULL, 'S'},
-         {0, 0, 0, 0}};
+        {
+            {"sample_rate", 1, NULL, 's'},
+            {"buffer_size", 1, NULL, 'b'},
+            {"drawbars", 1, NULL, 'd'},
+            {"xtalk", 1, NULL, 'x'},
+            {"chorus", 1, NULL, 'c'},
+            {"volume", 1, NULL, 'V'},
+            {"tremulant_level", 1, NULL, 't'},
+            {"tremulant_frequency", 1, NULL, 'f'},
+            {"reverb_time", 1, NULL, 'T'},
+            {"reverb_damping", 1, NULL, 'r'},
+            {"reverb_dry", 1, NULL, 'D'},
+            {"reverb_wet", 1, NULL, 'W'},
+            {"leslie_speed", 1, NULL, 'l'},
+            {"leslie_disable", 0, NULL, 'L'},
+            {"help", 0, NULL, 'h'},
+            {"midi_device", 1, NULL, 'M'},
+            {"audio_device", 1, NULL, 'A'},
+            {"percussion", 1, NULL, 'P'},
+            {"perc_fast", 0, NULL, 'F'},
+            {"perc_soft", 0, NULL, 'S'},
+            {0, 0, 0, 0}};
 
-    while ((c = getopt_long(argc, argv, "s:b:d:x:c:V:t:f:T:r:D:W:hM:A:P:FS", opts, NULL)) != -1)
+    while ((c = getopt_long(argc, argv, "s:b:d:x:c:V:t:f:T:r:D:W:l:L:hM:A:P:FS", opts, NULL)) != -1)
     {
         switch (c)
         {
@@ -573,6 +636,15 @@ int main(int argc, char **argv)
         case 'W':
             wet_rev = atof(optarg);
             break;
+        case 'L':
+            leslie_enabled = false;
+            break;
+        case 'l':
+            leslie_initial_speed = atoi(optarg);
+            // Ensure valid values: 1=slow, 2=fast
+            if (leslie_initial_speed < 1) leslie_initial_speed = 1;
+            if (leslie_initial_speed > 2) leslie_initial_speed = 2;
+            break;
         case 'M':
             midiport = (unsigned int)atoi(optarg);
             break;
@@ -593,7 +665,8 @@ int main(int argc, char **argv)
             std::cout << "\nTONEWHEEL ORGAN CLONE TEST v0.1_alpha - Emant 2014.\nUsage: tonewheel [[Option][Value]]\n\nValid Options are:\n\
  -s Sample Rate\n -b Buffer Size\n -M MIDI Device\n -A AUDIO Device\n -V Volume - range = 0 : 10\n -d 9 Digits Drawbars Settings - range = 0 : 8 (eg. 886660143)\n\
  -x Crosstalk Level - range = 0 : 100\n -c Chorus Level - range = 0 : 100\n -t Tremulant Level - range = 0 : 100\n -f Tremulant Frequency - range 0.0 = 10.0\n\
- -T Reverb Time [s]\n -r Reverb Damping - range 0.0 : 1.0\n -D Dry Signal - range 0.0 : 1.0\n -W Reverb Wet Signal - range 0.0 : 1.0\n -P Percussion - 2 = 2nd Harm, 3 = 3rd Harm (Default 'OFF')\n\
+ -T Reverb Time [s]\n -r Reverb Damping - range 0.0 : 1.0\n -D Dry Signal - range 0.0 : 1.0\n -W Reverb Wet Signal - range 0.0 : 1.0\n\
+ -l Leslie Initial Speed - 1=slow, 2=fast (Default: slow)\n -L Disable Leslie Simulator\n -P Percussion - 2 = 2nd Harm, 3 = 3rd Harm (Default 'OFF')\n\
  -F Percussion 'Fast' Decay (Default 'Slow')\n -S Percussion Volume 'Soft' (Default 'Normal')\n\n";
             return 0;
             break;
