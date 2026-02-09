@@ -56,6 +56,9 @@ private:
     double drum_radius;
     double mic_distance;
     double mic_angle;
+    double mic_angle_left;   // Left microphone angle
+    double mic_angle_right;  // Right microphone angle
+    double stereo_width;     // Stereo width factor (0.0 = mono, 1.0 = wide)
 
     // Rotation state
     double current_horn_angle;
@@ -94,6 +97,7 @@ public:
     void set_leslie_122_preset();
     void set_physical_parameters(double horn_radius, double drum_radius,
                                  double mic_dist, double mic_angle);
+    void set_stereo_width(double width);  // 0.0 = mono, 1.0 = maximum stereo
     void set_fixed_speeds(double horn_rpm, double drum_rpm);
     void stop();
 

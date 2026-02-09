@@ -40,15 +40,25 @@ public:
 
 class reverb
 {
-  std::vector<comb_filter> comb_filters;
-  std::vector<all_pass_filter> all_pass_filters;
+  // Separate filter banks for left and right channels
+  std::vector<comb_filter> comb_filters_left;
+  std::vector<comb_filter> comb_filters_right;
+  std::vector<all_pass_filter> all_pass_filters_left;
+  std::vector<all_pass_filter> all_pass_filters_right;
+
   size_t buffer_size;
   double dry;
   double wet;
   double room;
   double damping;
 
+  // Cross-mix coefficients for stereo width (hardcoded at 15%)
+  static constexpr double cross_mix = 0.15;
+
 public:
   reverb(double room, double damping, double dry, double wet, size_t buffer_size);
-  void process(double const *input_mono, double *output_left, double *output_right);
+
+  // Planar format: input[0..buffer_size-1] = left, input[buffer_size..2*buffer_size-1] = right
+  // Same for output
+  void process(const double *input, double *output);
 };

@@ -74,45 +74,99 @@ reverb::reverb(double room, double damping,
       room(room), damping(damping)
 {
   constexpr double all_pass_gain = 0.5;
-  comb_filters.push_back(comb_filter(room, damping, 1557));
-  comb_filters.push_back(comb_filter(room, damping, 1617));
-  comb_filters.push_back(comb_filter(room, damping, 1491));
-  comb_filters.push_back(comb_filter(room, damping, 1422));
-  comb_filters.push_back(comb_filter(room, damping, 1277));
-  comb_filters.push_back(comb_filter(room, damping, 1356));
-  comb_filters.push_back(comb_filter(room, damping, 1188));
-  comb_filters.push_back(comb_filter(room, damping, 1116));
 
-  all_pass_filters.push_back(all_pass_filter(all_pass_gain, 225));
-  all_pass_filters.push_back(all_pass_filter(all_pass_gain, 556));
-  all_pass_filters.push_back(all_pass_filter(all_pass_gain, 441));
-  all_pass_filters.push_back(all_pass_filter(all_pass_gain, 341));
+  // Comb filter delay times - offset by small primes for stereo width
+  // Left channel (original times)
+  comb_filters_left.push_back(comb_filter(room, damping, 1557));
+  comb_filters_left.push_back(comb_filter(room, damping, 1617));
+  comb_filters_left.push_back(comb_filter(room, damping, 1491));
+  comb_filters_left.push_back(comb_filter(room, damping, 1422));
+  comb_filters_left.push_back(comb_filter(room, damping, 1277));
+  comb_filters_left.push_back(comb_filter(room, damping, 1356));
+  comb_filters_left.push_back(comb_filter(room, damping, 1188));
+  comb_filters_left.push_back(comb_filter(room, damping, 1116));
+
+  // Right channel (offset by 1-3 samples)
+  comb_filters_right.push_back(comb_filter(room, damping, 1559));
+  comb_filters_right.push_back(comb_filter(room, damping, 1619));
+  comb_filters_right.push_back(comb_filter(room, damping, 1493));
+  comb_filters_right.push_back(comb_filter(room, damping, 1423));
+  comb_filters_right.push_back(comb_filter(room, damping, 1279));
+  comb_filters_right.push_back(comb_filter(room, damping, 1357));
+  comb_filters_right.push_back(comb_filter(room, damping, 1189));
+  comb_filters_right.push_back(comb_filter(room, damping, 1117));
+
+  // All-pass filters - left channel
+  all_pass_filters_left.push_back(all_pass_filter(all_pass_gain, 225));
+  all_pass_filters_left.push_back(all_pass_filter(all_pass_gain, 556));
+  all_pass_filters_left.push_back(all_pass_filter(all_pass_gain, 441));
+  all_pass_filters_left.push_back(all_pass_filter(all_pass_gain, 341));
+
+  // All-pass filters - right channel (offset for width)
+  all_pass_filters_right.push_back(all_pass_filter(all_pass_gain, 227));
+  all_pass_filters_right.push_back(all_pass_filter(all_pass_gain, 559));
+  all_pass_filters_right.push_back(all_pass_filter(all_pass_gain, 443));
+  all_pass_filters_right.push_back(all_pass_filter(all_pass_gain, 343));
 };
 
-void reverb::process(const double *input_mono, double *out_left, double *out_right)
+void reverb::process(const double *input, double *output)
 {
-  // parallel comb filters
-  // out_left is used as temp buffer to sum all comb responses
-  for (comb_filter &comb : comb_filters)
-  {
-    comb.process(input_mono, out_right, buffer_size);
-  }
-  // series all pass filters
-  for (all_pass_filter &all_pass : all_pass_filters)
-  {
-    all_pass.process(out_right, out_right, buffer_size);
-  }
+  // Planar format: input[0..buffer_size-1] = left, input[buffer_size..2*buffer_size-1] = right
+  const double *input_left = input;
+  const double *input_right = input + buffer_size;
+  double *output_left = output;
+  double *output_right = output + buffer_size;
 
-  // normalize
-  double scale = 1.0 / comb_filters.size();
+  // Temporary buffers for reverb processing
+  std::vector<double> temp_left(buffer_size, 0.0);
+  std::vector<double> temp_right(buffer_size, 0.0);
+  std::vector<double> cross_left(buffer_size);
+  std::vector<double> cross_right(buffer_size);
 
-  // mixer
+  // Apply cross-mix for stereo width
+  // L_mix = L_in + cross_mix * R_in
+  // R_mix = R_in + cross_mix * L_in
   for (size_t i = 0; i < buffer_size; i++)
   {
-    double _dry = input_mono[i] * dry;
-    double _wet = out_right[i] * scale * wet;
+    cross_left[i] = input_left[i] + cross_mix * input_right[i];
+    cross_right[i] = input_right[i] + cross_mix * input_left[i];
+  }
 
-    out_left[i] = _dry + _wet;
-    out_right[i] = _dry - _wet;
+  // Process parallel comb filters for left channel
+  for (comb_filter &comb : comb_filters_left)
+  {
+    comb.process(cross_left.data(), temp_left.data(), buffer_size);
+  }
+
+  // Process parallel comb filters for right channel
+  for (comb_filter &comb : comb_filters_right)
+  {
+    comb.process(cross_right.data(), temp_right.data(), buffer_size);
+  }
+
+  // Process series all-pass filters for left channel
+  for (all_pass_filter &all_pass : all_pass_filters_left)
+  {
+    all_pass.process(temp_left.data(), temp_left.data(), buffer_size);
+  }
+
+  // Process series all-pass filters for right channel
+  for (all_pass_filter &all_pass : all_pass_filters_right)
+  {
+    all_pass.process(temp_right.data(), temp_right.data(), buffer_size);
+  }
+
+  // Normalize and mix
+  double scale = 1.0 / comb_filters_left.size();
+
+  for (size_t i = 0; i < buffer_size; i++)
+  {
+    double wet_left = temp_left[i] * scale * wet;
+    double wet_right = temp_right[i] * scale * wet;
+    double dry_left = input_left[i] * dry;
+    double dry_right = input_right[i] * dry;
+
+    output_left[i] = dry_left + wet_left;
+    output_right[i] = dry_right + wet_right;
   }
 }

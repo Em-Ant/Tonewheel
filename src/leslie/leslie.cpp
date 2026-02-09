@@ -13,6 +13,9 @@ leslie_simulator::leslie_simulator(double sample_rate)
       drum_radius(0.18),
       mic_distance(0.8),
       mic_angle(M_PI / 6),
+      mic_angle_left(M_PI / 4),
+      mic_angle_right(-M_PI / 4),
+      stereo_width(0.7),
       current_horn_angle(0.0),
       current_drum_angle(0.0),
       current_horn_speed(0.0),
@@ -27,6 +30,9 @@ leslie_simulator::leslie_simulator(double sample_rate)
       drum_crossover_freq(800.0)
 {
     set_leslie_122_preset();
+
+    // Initialize microphone angles based on stereo width
+    set_stereo_width(stereo_width);
 
     // Initialize crossover filters
     horn_highpass.set_highpass(horn_crossover_freq, sample_rate);
@@ -48,6 +54,18 @@ void leslie_simulator::set_physical_parameters(double horn_radius, double drum_r
     this->drum_radius = drum_radius;
     this->mic_distance = mic_dist;
     this->mic_angle = mic_angle;
+}
+
+void leslie_simulator::set_stereo_width(double width)
+{
+    stereo_width = std::max(0.0, std::min(1.0, width));
+    // Calculate microphone angles based on stereo width
+    // Width 0.0 = both mics at center (mono)
+    // Width 1.0 = mics at +/- 30 degrees from center (60 degree spread)
+    double angle_spread = M_PI / 3.0 * stereo_width; // 60 degrees max spread
+    // Symmetric around mic_angle reference
+    mic_angle_left = mic_angle + angle_spread / 2.0;
+    mic_angle_right = mic_angle - angle_spread / 2.0;
 }
 
 void leslie_simulator::set_fixed_speeds(double horn_rpm, double drum_rpm)
@@ -136,28 +154,49 @@ void leslie_simulator::process(const double *input, double *output_left, double 
         double horn_input = horn_highpass.process(input[i]);
         double drum_input = drum_lowpass.process(input[i]);
 
-        // Calculate and smooth delay times
-        double horn_delay_samples = calculate_delay_samples(current_horn_angle, horn_radius, mic_distance, mic_angle);
-        double drum_delay_samples = calculate_delay_samples(current_drum_angle, drum_radius, mic_distance, mic_angle);
-
-        // Write to delay lines
+        // Write to delay lines (shared for both channels)
         horn_delay->write(horn_input);
         drum_delay->write(drum_input);
 
-        // Read delayed signals with interpolation
-        double horn_out = horn_delay->read_at(horn_delay_samples);
-        double drum_out = drum_delay->read_at(drum_delay_samples);
+        // Calculate delays separately for left and right microphones
+        double horn_delay_left = calculate_delay_samples(current_horn_angle, horn_radius, mic_distance, mic_angle_left);
+        double horn_delay_right = calculate_delay_samples(current_horn_angle, horn_radius, mic_distance, mic_angle_right);
+        double drum_delay_left = calculate_delay_samples(current_drum_angle, drum_radius, mic_distance, mic_angle_left);
+        double drum_delay_right = calculate_delay_samples(current_drum_angle, drum_radius, mic_distance, mic_angle_right);
 
-        horn_out = apply_tone_filter(horn_out, current_horn_angle);
+        // Read delayed signals with interpolation for each channel
+        double horn_out_left = horn_delay->read_at(horn_delay_left);
+        double horn_out_right = horn_delay->read_at(horn_delay_right);
+        double drum_out_left = drum_delay->read_at(drum_delay_left);
+        double drum_out_right = drum_delay->read_at(drum_delay_right);
 
-        double horn_amp = 0.7 + 0.3 * std::cos(current_horn_angle - mic_angle);
-        double drum_amp = 0.9 + 0.1 * std::cos(current_drum_angle - mic_angle);
+        // Apply tone filter (same for both channels, based on horn angle)
+        horn_out_left = apply_tone_filter(horn_out_left, current_horn_angle);
+        horn_out_right = apply_tone_filter(horn_out_right, current_horn_angle);
 
-        horn_out *= horn_amp;
-        drum_out *= drum_amp;
+        // Calculate amplitude modulation separately for each mic position
+        // Horn: directional source with stronger modulation (0.4 to 1.0 range)
+        double horn_amp_left = 0.7 + 0.3 * std::cos(current_horn_angle - mic_angle_left);
+        double horn_amp_right = 0.7 + 0.3 * std::cos(current_horn_angle - mic_angle_right);
+        // Drum: larger, more diffuse source with minimal directional modulation (0.95 to 1.0 range)
+        double drum_amp_left = 0.975 + 0.025 * std::cos(current_drum_angle - mic_angle_left);
+        double drum_amp_right = 0.975 + 0.025 * std::cos(current_drum_angle - mic_angle_right);
 
-        // Mix outputs (attenuated to prevent clipping)
-        output_left[i] = horn_out * 0.5 + drum_out * 0.4;
-        output_right[i] = horn_out * 0.5 + drum_out * 0.4;
+        horn_out_left *= horn_amp_left;
+        horn_out_right *= horn_amp_right;
+        drum_out_left *= drum_amp_left;
+        drum_out_right *= drum_amp_right;
+
+        // Mix outputs with stereo width
+        // As stereo width increases, horn contribution becomes more distinct between channels
+        double width_factor = 0.3 + 0.4 * stereo_width; // 0.3 to 0.7 range
+        double horn_mix = width_factor;
+        double drum_mix = 1.0 - width_factor * 0.3; // Drum stays more centered
+
+        // Normalize to maintain ~0.9x total gain (matching original behavior)
+        double normalizer = 0.9 / (horn_mix + drum_mix);
+
+        output_left[i] = (horn_out_left * horn_mix + drum_out_left * drum_mix) * normalizer;
+        output_right[i] = (horn_out_right * horn_mix + drum_out_right * drum_mix) * normalizer;
     }
 }

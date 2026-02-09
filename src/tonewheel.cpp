@@ -466,8 +466,8 @@ inline int wave(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrame
         }
     }
 
-    // Apply reverb after Leslie
-    _rev->process(bufferL, bufferL, bufferR);
+    // Apply reverb after Leslie (buffer is planar: L then R)
+    _rev->process(bufferL, bufferL);
     return 0;
 }
 
